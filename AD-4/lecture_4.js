@@ -10,17 +10,25 @@ let isPaused = true;
 let afPlayProcess = null;
 
 function listSongs(songDirPath) {
+  if (!fs.existsSync(songDirPath)) {
+    fs.mkdirSync(songDirPath, { recursive: true });
+  }
   allSongs = fs.readdirSync(songDirPath);
+  process.stdout.write("\x1b[2;1H");
 
-  console.log("------");
-  allSongs.forEach((songName, index) => {
-    console.log(`${index === cursor ? ">" : ""} ${songName}`);
-  });
-  console.log("------");
+  const menuText = allSongs.map((songName, index) => {
+    return `${index === cursor ? ">" : ""} ${songName}`;
+  }).join("\n");
+  
+  process.stdout.write(menuText)
 }
 
 function playSong(songFinalPath) {
+  if (afPlayProcess) {
+    afPlayProcess.kill();
+  }
   afPlayProcess = spawn("afplay", [songFinalPath]);
+  isPaused = false;
 }
 
 listSongs(songDir);
@@ -43,10 +51,14 @@ process.stdin.on("data", (data) => {
     if (data[1] === 0x5b) {
       if (data[2] === 0x41) {
         // up arrow key
-        cursor--; // should be in the loop of songs i.e use module operator
+        if (allSongs && allSongs.length > 0) {
+          cursor = (cursor - 1 + allSongs.length) % allSongs.length;
+        }
       } else if (data[2] === 0x42) {
-        cursor++; // should be in the loop of songs i.e use module operator
         // down arrow key
+        if (allSongs && allSongs.length > 0) {
+          cursor = (cursor + 1) % allSongs.length;
+        }
       } else if (data[2] === 0x43) {
         // right arrow key
         console.log(">");
@@ -70,6 +82,7 @@ process.stdin.on("data", (data) => {
 
   // enter in raw mode
   if (data[0] === 0x0d) {
+    if (!allSongs || allSongs.length === 0) return;
     currentMusicSelectionIndex = cursor;
     const finalSong = path.join(songDir, allSongs[currentMusicSelectionIndex]);
     playSong(finalSong);
@@ -78,11 +91,15 @@ process.stdin.on("data", (data) => {
 
   // when in raw mode, the process get 0x03, does not provide SIGINT signal ( this gets in default mode )
   if (data[0] === 0x03) {
+    if (afPlayProcess) {
+      afPlayProcess.kill();
+    }
     process.exit(); // generates SIGINT and exit the nodejs process
   }
 
   // play pause
   if (data[0] === 0x20) {
+    if (!afPlayProcess) return;
     // to stop the process we will use SIGSTOP command
     if (isPaused) {
       afPlayProcess.kill("SIGCONT");
